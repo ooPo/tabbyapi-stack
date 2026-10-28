@@ -141,5 +141,52 @@ that turn thinking off should send the model card's non-thinking values themselv
 
 Change one variable at a time between runs, and restart the container in between.
 
-The TabbyAPI image is pinned by digest in `docker-compose.yml`. To upgrade,
-replace the digest and re-run `bench.sh` to compare.
+## Upgrading
+
+The TabbyAPI image is pinned by digest in `docker-compose.yml`, so updates never
+arrive silently. The current pin is TabbyAPI `53da791` (2026-09-13) with
+exllamav3 1.5.0.
+
+**1. Check what changed.** Read the
+[TabbyAPI commits](https://github.com/theroyallab/tabbyAPI/commits/main) and
+[exllamav3 releases](https://github.com/turboderp-org/exllamav3/releases) since
+the current pin. Look for fixes or known regressions affecting prompt caching,
+drafting (MTP), sampling, or GDN / linear-attention layers, which make up most of
+this model. Skip an image whose exllamav3 version has an open regression in
+something this stack relies on.
+
+**2. Pull the new image and note its digest and exllamav3 version:**
+
+```bash
+docker pull ghcr.io/theroyallab/tabbyapi:latest
+docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/theroyallab/tabbyapi:latest
+docker run --rm --entrypoint sh ghcr.io/theroyallab/tabbyapi:latest -c 'pip show exllamav3 | grep -i ^version'
+```
+
+**3. Swap the digest** into `docker-compose.yml`, update the comment above it, and
+restart with the default config.
+
+**4. Re-measure each config,** restarting between them:
+
+- **Decode:** `./bench.sh 3`, compared with the configs table above.
+- **Prompt caching:** run `bench.sh` with a long prompt. The warm-up processes
+  the full prompt, and the next run should be served from cache, with prefill
+  dropping from tens of seconds to under a second:
+
+  ```bash
+  BENCH_PROMPT="$(head -c 40000 models/Qwen3.8-27B-exl3_3.00bpw/README.md) Summarise the above in one sentence." ./bench.sh 1
+  ```
+
+  On the current pin, 15k tokens take 26 s cold and 0.65 s cached.
+- **Context limits:** the server still loads at the configured context. VRAM
+  improvements may also let a config load with more, so it's worth retrying the
+  next step up (e.g. 64k on 3.5bpw with MTP).
+
+**5. Keep it or roll back.** If everything holds up, commit the new digest with
+the numbers in the message, and update the tables in this README. If not, restore
+the old pin and restart:
+
+```bash
+git checkout docker-compose.yml
+docker compose up -d --force-recreate tabbyapi
+```
