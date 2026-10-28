@@ -58,6 +58,9 @@ these reasoning and MTP settings:
 - **Thinking cap:** thinking is forced to end after 16k tokens
   (`reasoning_budget_tokens`, also overridable per request).
 - **MTP:** drafts up to 4 tokens, cut short dynamically when the drafter is unsure.
+- **RAM prompt cache:** K/V pages evicted from VRAM are kept in system RAM
+  (`sysmem_kv_cache: 8192`), so switching back to an earlier conversation is
+  near-instant. See [Prompt caching](#prompt-caching).
 
 | File                             | Context | Decode (code / prose) | Peak VRAM |
 |----------------------------------|---------|-----------------------|-----------|
@@ -99,6 +102,29 @@ Measured before the reasoning defaults above, with the coding prompt:
 MTP roughly doubles decode speed and needs about 1.2 GB of VRAM. Without it, the
 quant alone makes only about a 10% difference. On 16GB, 3.5bpw fails to load at
 108k without MTP and at 64k with it.
+
+### Prompt caching
+
+The server keeps each conversation's processed prompt in VRAM, so a follow-up
+message only processes the new part. That cache is the size of the context (112k
+or 60k tokens). When conversations you switch between add up to more than that,
+the oldest is evicted, and returning to it means processing its whole history
+again at about 590 tokens/s.
+
+With `sysmem_kv_cache`, evicted pages go to system RAM instead and are copied
+back on return. Measured on 3.5bpw, switching between two 35k-token conversations
+(70k total, more than the 60k cache):
+
+| Request                 | RAM tier off | RAM tier on |
+|-------------------------|--------------|-------------|
+| First message (cold)    | 59.7 s       | 59.7 s      |
+| Follow-up, still cached | 0.9 s        | 0.9 s       |
+| Back to it after the other | 55.5 s    | 0.7 s       |
+
+The cost is RAM, not VRAM. In this build the full 8 GB (about 9 GB with
+overhead) is reserved as pinned memory right after load, even though the option
+is described as a ceiling. At about 24 KB per token, that holds roughly 360k
+tokens. Decode speed is unaffected.
 
 The `qwen` sampler preset in `sampler_overrides/` uses the model card's
 thinking-mode values. It only fills in values the client doesn't send, so clients

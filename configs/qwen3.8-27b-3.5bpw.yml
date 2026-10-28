@@ -37,3 +37,9 @@ draft_model:
 logging:
   log_prompt: false
   log_generation_params: false
+
+memory:
+  # Keep K/V pages evicted from VRAM in system RAM, so returning to a conversation
+  # restores it instead of reprocessing it (35k tokens: 0.7s instead of 55s).
+  # Reserves about 9 GB of pinned RAM at load; holds roughly 360k tokens.
+  sysmem_kv_cache: 8192

@@ -111,6 +111,10 @@ opencode's `tools` section, saves a little on every request.
   different server if you have one, so they don't queue behind the main model.
 - **The first request in a session processes the whole system prompt.** Later
   requests reuse the server's prompt cache and start much faster.
+- **Switching between sessions is fast.** Conversations pushed out of VRAM are
+  kept in system RAM and restored in about a second, rather than reprocessed at
+  about 590 tokens/s (a minute for a 35k-token session). After opencode compacts a
+  session, the history has changed, so the next request processes it fresh.
 
 ## Checking what opencode sends
 
