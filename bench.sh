@@ -5,6 +5,14 @@
 # the server reports its own decode T/s, prefill time and draft acceptance.
 #
 # Usage: ./bench.sh [num_runs]
+#        ./bench.sh --long [num_runs]   (prefill speed and prompt caching instead)
+#
+# --long sends ~16k- and ~48k-token prompts built from the model's README. Each run
+# starts with a unique line, so nothing is reused from the prompt cache and the
+# whole prompt is processed (cold prefill). The last prompt of each size is then
+# sent again unchanged, which should come back from the cache in under a second.
+# Sizes that don't fit the loaded context are skipped.
+#
 # IMPORTANT: only change ONE variable (e.g. draft_model on/off) between bench.sh
 # runs, restarting the container in between. Keep max_seq_len identical across
 # the runs you're comparing, or the comparison isn't clean.
@@ -15,6 +23,64 @@ API_URL="http://localhost:5000/v1/chat/completions"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_KEY="$(grep -oP '^api_key:\s*\K\S+' "$SCRIPT_DIR/api_tokens.yml")"
 MODEL="$(curl -sf "${API_URL%/chat/completions}/model" -H "Authorization: Bearer $API_KEY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"  # whatever is loaded
+
+if [ "${1:-}" = "--long" ]; then
+  RUNS="${2:-3}"
+  CTX="$(curl -sf "${API_URL%/chat/completions}/model" -H "Authorization: Bearer $API_KEY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["parameters"]["max_seq_len"])')"
+  DOC="$(ls "$SCRIPT_DIR"/models/*/README.md | head -1)"
+
+  # Prints a request body: the README repeated to roughly $1 tokens, prefixed by $2.
+  # Bodies go to curl through stdin, as they're larger than a command-line argument may be.
+  build_body() {
+    python3 - "$DOC" "$1" "$2" <<'PY'
+import json, sys
+doc, tokens, prefix = open(sys.argv[1]).read(), int(sys.argv[2]), sys.argv[3]
+chars = int(tokens * 2.6)  # this README averages ~2.6 characters per token
+text = (doc * (chars // len(doc) + 1))[:chars]
+print(json.dumps({
+    "messages": [{"role": "user", "content": f"{prefix}\n\n{text}\n\nSummarise the above in one sentence."}],
+    "max_tokens": 1, "temperature": 0, "stream": True,
+    "stream_options": {"include_usage": True},
+}))
+PY
+  }
+
+  SUMMARIZE_PREFILL='
+import json, sys
+usage = None
+for line in sys.stdin:
+    if line.startswith("data: {"):
+        usage = json.loads(line[6:]).get("usage") or usage
+if not usage:
+    sys.exit("no usage stats in response")
+cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+total, secs = usage["prompt_tokens"], usage["prompt_time"]
+rate = f" ({(total - cached) / secs:.0f} T/s)" if cached == 0 and secs else ""
+print(f"{total} tokens, {cached} cached, prefill {secs:.2f}s{rate}")
+'
+
+  send() {
+    curl -sfN "$API_URL" -H "Content-Type: application/json" -H "Authorization: Bearer $API_KEY" -d @- \
+      | python3 -c "$SUMMARIZE_PREFILL"
+  }
+
+  echo "Prefill and prompt caching against $MODEL (context ${CTX}, $RUNS runs per size)"
+  echo
+  printf '%-22s' 'warm-up (ignore):'; build_body 2048 "warm-up $$" | send
+  for size in 16384 49152; do
+    label="$((size / 1024))k target"
+    if [ "$size" -gt $((CTX - 1024)) ]; then echo "$label: skipped, larger than the loaded context"; continue; fi
+    for i in $(seq 1 "$RUNS"); do
+      printf '%-22s' "$label, cold $i/$RUNS:"
+      build_body "$size" "Run $i of $$ at $(date +%s%N)." > "${TMPDIR:-/tmp}/bench-long-$$.json"
+      send < "${TMPDIR:-/tmp}/bench-long-$$.json"
+    done
+    printf '%-22s' "$label, cached:"; send < "${TMPDIR:-/tmp}/bench-long-$$.json"
+    rm -f "${TMPDIR:-/tmp}/bench-long-$$.json"
+  done
+  exit 0
+fi
+
 RUNS="${1:-5}"
 MAX_TOKENS=300
 

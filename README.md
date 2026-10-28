@@ -120,7 +120,16 @@ The server keeps each conversation's processed prompt in VRAM, so a follow-up
 message only processes the new part. That cache is the size of the context (112k
 or 60k tokens). When conversations you switch between add up to more than that,
 the oldest is evicted, and returning to it means processing its whole history
-again at about 590 tokens/s.
+again (prefill):
+
+| Prompt      | 3.0bpw cold         | 3.5bpw cold         | Cached (either) |
+|-------------|---------------------|---------------------|-----------------|
+| 16k tokens  | 22.7 s (710 T/s)    | 22.8 s (709 T/s)    | 0.07 s          |
+| 45k tokens  | 76.5 s (589 T/s)    | 76.6 s (588 T/s)    | 0.87 s          |
+
+Measured with `./bench.sh --long`, best of two cold runs (the first cold run of
+each size is about 10% slower). Prefill speed is the same for both quants, and it
+slows a little as prompts get longer.
 
 With `sysmem_kv_cache`, evicted pages go to system RAM instead and are copied
 back on return. Measured on 3.5bpw, switching between two 35k-token conversations
@@ -147,6 +156,10 @@ that turn thinking off should send the model card's non-thinking values themselv
   requests against whichever model is loaded. It prints decode T/s, prefill time
   and MTP draft acceptance as reported by the server. Set `BENCH_PROMPT` to test
   a different kind of text, since draft acceptance varies with content.
+- `./bench.sh --long [runs]` measures prefill instead: ~16k- and ~45k-token
+  prompts, each made unique so nothing comes from the cache, then the last one
+  repeated to check that it does. Sizes larger than the loaded context are
+  skipped.
 - `./bench-concurrent.sh` sends 3 requests at once and records peak VRAM. With
   `max_batch_size: 1` they queue rather than batch.
 
@@ -180,15 +193,9 @@ restart with the default config.
 **4. Re-measure each config,** restarting between them:
 
 - **Decode:** `./bench.sh 3`, compared with the configs table above.
-- **Prompt caching:** run `bench.sh` with a long prompt. The warm-up processes
-  the full prompt, and the next run should be served from cache, with prefill
-  dropping from tens of seconds to under a second:
-
-  ```bash
-  BENCH_PROMPT="$(head -c 40000 models/Qwen3.8-27B-exl3_3.00bpw/README.md) Summarise the above in one sentence." ./bench.sh 1
-  ```
-
-  On the current pin, 15k tokens take 26 s cold and 0.65 s cached.
+- **Prefill and prompt caching:** `./bench.sh --long 2`, compared with the
+  prefill table above. The "cached" lines must still come back in under a second;
+  if they take as long as the cold runs, prompt caching is broken in that build.
 - **Context limits:** the server still loads at the configured context. VRAM
   improvements may also let a config load with more, so it's worth retrying the
   next step up (e.g. 64k on 3.5bpw with MTP).
