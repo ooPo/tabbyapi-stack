@@ -58,6 +58,9 @@ uses the entry's context limit to decide when to compact the conversation. If
 3.5bpw is loaded and you use the 3.0bpw entry, opencode lets the conversation grow
 past 60k and requests start failing.
 
+`./switch.sh` prints the entry to use after each switch, and `./switch.sh` on its
+own shows it for whatever is currently loaded.
+
 | Server config                    | opencode entry              | Good for                         |
 |----------------------------------|-----------------------------|----------------------------------|
 | `configs/qwen3.8-27b-3.0bpw.yml` | `Qwen3.8 27B 3.0bpw (112k)` | Long agent sessions              |

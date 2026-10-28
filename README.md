@@ -31,12 +31,23 @@ docker compose up -d --force-recreate tabbyapi
 docker compose logs -f tabbyapi
 ```
 
-This uses `configs/qwen3.8-27b-3.0bpw.yml` by default. To run another config, set
-`TABBY_CONFIG`:
+This uses `configs/qwen3.8-27b-3.0bpw.yml` by default. To switch configs, use
+`switch.sh`:
 
 ```bash
-TABBY_CONFIG=configs/qwen3.8-27b-3.5bpw.yml docker compose up -d --force-recreate tabbyapi
+./switch.sh 3.5    # or 3.0, or a path such as configs/<file>.yml
+./switch.sh        # show the current config, the loaded model and the opencode entry
 ```
+
+It waits until the model has loaded, and prints which opencode entry to use. The
+choice is saved to `.env`, so later `docker compose up` runs keep it. If the new
+config fails to load, it restores the previous one. Setting `TABBY_CONFIG` in the
+environment still overrides `.env` for a one-off run.
+
+`docker ps` shows the container as `healthy` once a model is loaded and the
+server reports no errors. A model that fails to load shows up differently:
+TabbyAPI exits, and Docker keeps restarting it ("Up 3 seconds", with a rising
+restart count).
 
 Clients connect to `http://<host>:5000/v1` using the `api_key` from
 `api_tokens.yml`. Port 5000 listens on all interfaces, so firewall it to trusted

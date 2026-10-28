@@ -27,3 +27,13 @@ services:
               count: all
               capabilities: [gpu]
     ipc: host
+    # Healthy only when the server reports no errors AND a model is loaded.
+    # Catches failures after a successful load (server errors, a hang). A model
+    # that fails to load makes TabbyAPI exit instead, which shows up as a restart
+    # loop ("Up 3 seconds", rising restart count) with health stuck at "starting".
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf localhost:5000/health && curl -sf -H \"Authorization: Bearer $$(sed -n 's/^api_key: *//p' /app/api_tokens.yml)\" localhost:5000/v1/model"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s

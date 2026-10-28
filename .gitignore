@@ -6,3 +6,6 @@ models/
 
 # Throwaway configs from testing
 configs/tmp-*.yml
+
+# Local config choice, written by ./switch.sh
+.env
