@@ -1,0 +1,29 @@
+services:
+  tabbyapi:
+    # Pinned to the build tested here (2026-09-13, tabbyAPI 53da791, exllamav3 1.5.0).
+    # To upgrade, swap in a new digest and re-run bench.sh to compare.
+    image: ghcr.io/theroyallab/tabbyapi@sha256:10bfcf9d27d1b3a5c7ada786f814b9da43fadad35643362f2fe0816082893172
+    container_name: tabbyapi
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Model files (each model in its own subfolder)
+      - ./models:/app/models
+      # Server config; pick a variant with e.g. TABBY_CONFIG=configs/qwen3.8-27b-3.5bpw.yml docker compose up -d
+      - ./${TABBY_CONFIG:-configs/qwen3.8-27b-3.0bpw.yml}:/app/config.yml
+      # API key file. Create it before first launch (see README): if it's missing,
+      # Docker creates a directory here instead and TabbyAPI can't use it.
+      - ./api_tokens.yml:/app/api_tokens.yml
+      # Sampler override presets (referenced by config.yml's sampling.override_preset)
+      - ./sampler_overrides:/app/sampler_overrides
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ipc: host

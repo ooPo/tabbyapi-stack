@@ -1,0 +1,119 @@
+# tabbyapi-stack
+
+TabbyAPI serving Qwen3.8-27B (exl3) on a single RTX 4060 Ti 16GB, exposed as an
+OpenAI-compatible API on port 5000.
+
+## Setup
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv python3-full
+
+python3 -m venv ~/.venvs/hf-dl
+source ~/.venvs/hf-dl/bin/activate
+pip install -U huggingface_hub
+
+./download-models.sh   # fetches the 3.00bpw and 3.50bpw quants into models/
+```
+
+Create `api_tokens.yml` before the first launch. It's git-ignored, so a fresh
+clone doesn't have one:
+
+```bash
+printf 'api_key: %s\nadmin_key: %s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > api_tokens.yml
+chmod 600 api_tokens.yml
+```
+
+## Running
+
+```bash
+docker compose up -d --force-recreate tabbyapi
+docker compose logs -f tabbyapi
+```
+
+This uses `configs/qwen3.8-27b-3.0bpw.yml` by default. To run another config, set
+`TABBY_CONFIG`:
+
+```bash
+TABBY_CONFIG=configs/qwen3.8-27b-3.5bpw.yml docker compose up -d --force-recreate tabbyapi
+```
+
+Clients connect to `http://<host>:5000/v1` using the `api_key` from
+`api_tokens.yml`. Port 5000 listens on all interfaces, so firewall it to trusted
+hosts. Browser (cross-origin) requests are blocked with `allowed_origins: []`, so
+a client that calls the API from a browser page needs its origin added there.
+
+For coding with opencode, see [OPENCODE.md](OPENCODE.md).
+
+## Configs
+
+Each file in `configs/` is named `<model>-<quant>.yml`. Apart from the differences
+below, both use the same settings: `6,5` KV cache, the `qwen` sampler preset, and
+these reasoning and MTP settings:
+
+- **Reasoning defaults:** `medium` effort, and thinking from earlier turns is
+  dropped (`preserve_thinking: false`). The model's own defaults are `xhigh` and
+  preserved thinking, which are slower and fill context fast. Clients can override
+  both per request through `chat_template_kwargs`.
+- **Thinking cap:** thinking is forced to end after 16k tokens
+  (`reasoning_budget_tokens`, also overridable per request).
+- **MTP:** drafts up to 4 tokens, cut short dynamically when the drafter is unsure.
+
+| File                             | Context | Decode (code / prose) | Peak VRAM |
+|----------------------------------|---------|-----------------------|-----------|
+| `configs/qwen3.8-27b-3.0bpw.yml` | 112k    | 45.7 / 40.1 T/s       | 14.7 GB   |
+| `configs/qwen3.8-27b-3.5bpw.yml` | 60k     | 42.2 T/s (code)       | 14.8 GB   |
+
+Measured with `bench.sh` (temperature 0, 300 tokens) on an RTX 4060 Ti 16GB. The
+prose figure uses `BENCH_PROMPT` with a short plain-English explainer. Results
+repeat exactly within one load, but can shift by about 1% between restarts.
+Dynamic drafting calibrates as it goes, so the first couple of requests after a
+restart are slower.
+
+Pick 3.0bpw for long context, or 3.5bpw for the better quant at nearly the same
+speed when 60k is enough.
+
+### MTP draft length (3.0bpw)
+
+| Draft tokens  | Code     | Prose    |
+|---------------|----------|----------|
+| 2             | 41.5 T/s | 39.0 T/s |
+| 3             | 44.2 T/s | 39.0 T/s |
+| 4 (default)   | 44.8 T/s | 39.1 T/s |
+| 5             | 42.5 T/s | 37.6 T/s |
+| 4, dynamic    | 45.7 T/s | 40.1 T/s |
+
+6 or more draft tokens (fixed or dynamic) fail to load at 112k: longer drafts need
+more VRAM on this model. Compare speeds, not acceptance percentages: acceptance
+drops as drafts get longer even when more tokens are accepted in total.
+
+### Without MTP
+
+Measured before the reasoning defaults above, with the coding prompt:
+
+| Quant   | Max context | Decode   | Peak VRAM |
+|---------|-------------|----------|-----------|
+| 3.0bpw  | 112k        | 22.0 T/s | 13.4 GB   |
+| 3.5bpw  | 104k        | 20.0 T/s | 14.7 GB   |
+
+MTP roughly doubles decode speed and needs about 1.2 GB of VRAM. Without it, the
+quant alone makes only about a 10% difference. On 16GB, 3.5bpw fails to load at
+108k without MTP and at 64k with it.
+
+The `qwen` sampler preset in `sampler_overrides/` uses the model card's
+thinking-mode values. It only fills in values the client doesn't send, so clients
+that turn thinking off should send the model card's non-thinking values themselves.
+
+## Benchmarking
+
+- `./bench.sh [runs]` sends a warm-up request, then sequential, deterministic
+  requests against whichever model is loaded. It prints decode T/s, prefill time
+  and MTP draft acceptance as reported by the server. Set `BENCH_PROMPT` to test
+  a different kind of text, since draft acceptance varies with content.
+- `./bench-concurrent.sh` sends 3 requests at once and records peak VRAM. With
+  `max_batch_size: 1` they queue rather than batch.
+
+Change one variable at a time between runs, and restart the container in between.
+
+The TabbyAPI image is pinned by digest in `docker-compose.yml`. To upgrade,
+replace the digest and re-run `bench.sh` to compare.

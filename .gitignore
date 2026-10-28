@@ -1,0 +1,8 @@
+# API keys
+api_tokens.yml
+
+# Model weights (re-download with ./download-models.sh)
+models/
+
+# Throwaway configs from testing
+configs/tmp-*.yml

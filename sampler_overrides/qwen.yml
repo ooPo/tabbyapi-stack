@@ -1,0 +1,29 @@
+# Sampler overrides for Qwen3.8-27B (thinking mode, per the official model card).
+# force: false = only fills in values the client doesn't send.
+#
+# For non-thinking / instruct use, Qwen recommends instead:
+#   temperature 0.7, top_p 0.8, top_k 20, min_p 0.0, presence_penalty 1.5
+
+temperature:
+  override: 1.0
+  force: false
+
+top_p:
+  override: 0.95
+  force: false
+
+top_k:
+  override: 20
+  force: false
+
+min_p:
+  override: 0.0
+  force: false
+
+presence_penalty:
+  override: 0.0
+  force: false
+
+repetition_penalty:
+  override: 1.0
+  force: false
