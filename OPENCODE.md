@@ -20,10 +20,10 @@ In `~/.config/opencode/opencode.json`, under `provider`:
   },
   "models": {
     "Qwen3.8-27B-exl3_3.00bpw": {
-      "name": "Qwen3.8 27B 3.0bpw (112k)",
+      "name": "Qwen3.8 27B 3.0bpw (128k)",
       "attachment": true,
       "modalities": { "input": ["text", "image"], "output": ["text"] },
-      "limit": { "context": 114688, "output": 32000 },
+      "limit": { "context": 131072, "output": 32000 },
       "options": {
         "chat_template_kwargs": { "reasoning_effort": "xhigh", "preserve_thinking": true },
         "reasoning_budget_tokens": 24576
@@ -40,10 +40,10 @@ In `~/.config/opencode/opencode.json`, under `provider`:
       }
     },
     "Qwen3.8-27B-exl3_3.50bpw": {
-      "name": "Qwen3.8 27B 3.5bpw (60k)",
+      "name": "Qwen3.8 27B 3.5bpw (80k)",
       "attachment": true,
       "modalities": { "input": ["text", "image"], "output": ["text"] },
-      "limit": { "context": 61440, "output": 32000 },
+      "limit": { "context": 81920, "output": 32000 },
       "options": { "...": "same as the 3.0bpw entry" },
       "variants": { "...": "same as the 3.0bpw entry" }
     }
@@ -60,19 +60,19 @@ Put the `api_key` from `api_tokens.yml` in `~/.config/opencode/tabby-key`, and
 answers with whatever model is loaded, whichever entry you choose. But opencode
 uses the entry's context limit to decide when to compact the conversation. If
 3.5bpw is loaded and you use the 3.0bpw entry, opencode lets the conversation grow
-past 60k and requests start failing.
+past 80k and requests start failing.
 
 `./switch.sh` prints the entry to use after each switch, and `./switch.sh` on its
 own shows it for whatever is currently loaded.
 
 | Server config                    | opencode entry              | Good for                         |
 |----------------------------------|-----------------------------|----------------------------------|
-| `configs/qwen3.8-27b-3.0bpw.yml` | `Qwen3.8 27B 3.0bpw (112k)` | Long agent sessions              |
-| `configs/qwen3.8-27b-3.5bpw.yml` | `Qwen3.8 27B 3.5bpw (60k)`  | Better quant, focused tasks      |
+| `configs/qwen3.8-27b-3.0bpw.yml` | `Qwen3.8 27B 3.0bpw (128k)` | Long agent sessions              |
+| `configs/qwen3.8-27b-3.5bpw.yml` | `Qwen3.8 27B 3.5bpw (80k)`  | Better quant, focused tasks      |
 
-Both run at a similar speed (about 42–46 T/s). Code is less forgiving of
+Both run at a similar speed (about 44–45 T/s). Code is less forgiving of
 quantization than prose, so 3.5bpw should be the stronger coder, at the cost of
-half the context.
+some context.
 
 ## Reasoning effort
 
@@ -105,19 +105,27 @@ that tends to cause repetition loops in the thinking, not better code.
 ## Context budget
 
 opencode's system prompt and tool definitions take about 11k tokens before you
-type anything, most of it opencode's own core tools. That's a tenth of 3.0bpw's
-context but nearly a fifth of 3.5bpw's. Turning off MCP tools you don't use, in
+type anything, most of it opencode's own core tools. That's under a tenth of
+3.0bpw's context and about a seventh of 3.5bpw's. Turning off MCP tools you don't use, in
 opencode's `tools` section, saves a little on every request.
 
 ## Images
 
 `attachment` and `modalities` tell opencode the model accepts images, so you can
-paste screenshots of errors, UIs or charts. Images cost context like text: about
-900 tokens for a 1280×720 screenshot, 3,600 for 1440p and 8,000 for 4K (the
-largest the server accepts; bigger ones are downscaled). They stay in the
-conversation until opencode compacts it, so a few 4K screenshots take a real
-share of 3.5bpw's 60k. Crop to the part that matters when you can: it's faster,
-too. See [Vision](README.md#vision) for timings.
+paste screenshots of errors, UIs or charts. opencode first shrinks any image
+larger than 2000×2000 to fit (its `media.image` settings), so a 1440p or 4K
+screenshot arrives as about 2,200 tokens, and 1080p or smaller as about 900–2,000.
+Images stay in the conversation until opencode compacts it. Crop to the part
+that matters when you can: it's faster, too.
+
+The height limit also shrinks tall full-page captures, which can make small text
+unreadable. To let those through, raise it in `opencode.json`:
+
+```json
+"media": { "image": { "max_height": 5000 } }
+```
+
+See [Vision](README.md#vision) for timings.
 
 ## Performance notes
 
@@ -128,9 +136,15 @@ too. See [Vision](README.md#vision) for timings.
   different server if you have one, so they don't queue behind the main model.
 - **The first request in a session processes the whole system prompt.** Later
   requests reuse the server's prompt cache and start much faster.
+- **Edits are fast to write.** When the model quotes code from the conversation,
+  as edit calls and file rewrites do, the server drafts it in large pieces
+  (`hybrid_draft_tokens`): a verbatim file copy runs at about 200 T/s instead of 72.
+- **Files with Windows (CRLF) line endings can break prompt caching** on the
+  current image (exllamav3 1.6.4). If a long session reprocesses its whole
+  history every turn, that's the likely cause. See the README's Upgrading section.
 - **Switching between sessions is fast.** Conversations pushed out of VRAM are
   kept in system RAM and restored in about a second, rather than reprocessed at
-  about 590 tokens/s (a minute for a 35k-token session). After opencode compacts a
+  about 650 tokens/s (over a minute for a 45k-token session). After opencode compacts a
   session, the history has changed, so the next request processes it fresh.
 
 ## Checking what opencode sends

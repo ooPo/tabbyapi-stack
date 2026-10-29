@@ -1,8 +1,9 @@
 services:
   tabbyapi:
-    # Pinned to the build tested here (2026-09-13, tabbyAPI 53da791, exllamav3 1.5.0).
-    # To upgrade, swap in a new digest and re-run bench.sh to compare.
-    image: ghcr.io/theroyallab/tabbyapi@sha256:10bfcf9d27d1b3a5c7ada786f814b9da43fadad35643362f2fe0816082893172
+    # Pinned to the build tested here (2026-10-23, tabbyAPI 564f8fb, exllamav3 1.6.4).
+    # exllamav3 1.6.4 can break prompt caching for long prompts containing CRLF
+    # line endings (fixed in 1.6.5). To upgrade, see "Upgrading" in the README.
+    image: ghcr.io/theroyallab/tabbyapi@sha256:4a4d39f48e385b65aaa56bbf7c55da0688c4ee87319220a7637b06bbd3d2f91f
     container_name: tabbyapi
     restart: unless-stopped
     ports:

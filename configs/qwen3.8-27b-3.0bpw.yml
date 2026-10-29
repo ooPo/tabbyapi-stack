@@ -1,11 +1,13 @@
 # Qwen3.8-27B exl3 3.00bpw (default config).
-# 112k context, 6,5 KV cache, MTP and vision on. Thinking-mode sampler preset.
+# 128k context, 6,5 KV cache, MTP and vision on. Thinking-mode sampler preset.
 
 network:
   host: 0.0.0.0
   port: 5000
   # Block browser (cross-origin) callers. Server-side clients are unaffected.
   allowed_origins: []
+  # No built-in chat page at /ui: this is an API-only server.
+  web_ui: false
 
 sampling:
   override_preset: qwen
@@ -16,7 +18,7 @@ model:
   # fit at full context. Image size cap: see docker-compose.yml.
   vision: true
   vision_offload: true
-  max_seq_len: 114688 # 112k
+  max_seq_len: 131072 # 128k
   cache_mode: 6,5
   gpu_split_auto: true
   tool_format: qwen3_coder
@@ -32,9 +34,13 @@ model:
 draft_model:
   draft_mode: mtp
   # Draft up to 4 tokens, cut short when the drafter is unsure. Measured best on
-  # 3.0bpw (5 is slower, 6+ does not fit in VRAM).
+  # 3.0bpw on the previous image (5 is slower, 6+ did not fit in VRAM).
   draft_num_tokens: 4
   dynamic_draft: true
+  # When the model repeats text from its context (quoting code in an edit,
+  # rewriting a file), draft up to 32 tokens of it at once. Measured on a
+  # verbatim file copy: 72 -> 199 T/s; no measurable cost otherwise.
+  hybrid_draft_tokens: 32
 
 logging:
   log_prompt: false

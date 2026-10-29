@@ -9,9 +9,13 @@
 #
 # --long sends ~16k- and ~48k-token prompts built from the model's README. Each run
 # starts with a unique line, so nothing is reused from the prompt cache and the
-# whole prompt is processed (cold prefill). The last prompt of each size is then
-# sent again unchanged, which should come back from the cache in under a second.
-# Sizes that don't fit the loaded context are skipped.
+# whole prompt is processed (cold prefill). The last conversation of each size then
+# gets a follow-up turn (the model's own reply plus a new question), whose earlier
+# part should come from the cache in about a second. Sizes that don't fit the
+# loaded context are skipped.
+#
+# The text uses CRLF line endings: exllamav3 1.6.4 can tokenize a growing CRLF
+# prompt differently each turn, which breaks the cache for the follow-up.
 #
 # IMPORTANT: only change ONE variable (e.g. draft_model on/off) between bench.sh
 # runs, restarting the container in between. Keep max_seq_len identical across
@@ -29,28 +33,40 @@ if [ "${1:-}" = "--long" ]; then
   CTX="$(curl -sf "${API_URL%/chat/completions}/model" -H "Authorization: Bearer $API_KEY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["parameters"]["max_seq_len"])')"
   DOC="$(ls "$SCRIPT_DIR"/models/*/README.md | head -1)"
 
-  # Prints a request body: the README repeated to roughly $1 tokens, prefixed by $2.
+  # Prints a request body: the README repeated to roughly $1 tokens, prefixed by $2,
+  # with CRLF line endings. With $3 (a file holding the model's reply), adds that
+  # reply and a second question. Thinking is off, so the reply is short.
   # Bodies go to curl through stdin, as they're larger than a command-line argument may be.
   build_body() {
-    python3 - "$DOC" "$1" "$2" <<'PY'
+    python3 - "$DOC" "$1" "$2" "${3:-}" <<'PY'
 import json, sys
-doc, tokens, prefix = open(sys.argv[1]).read(), int(sys.argv[2]), sys.argv[3]
+doc, tokens, prefix, reply_file = open(sys.argv[1]).read(), int(sys.argv[2]), sys.argv[3], sys.argv[4]
 chars = int(tokens * 2.6)  # this README averages ~2.6 characters per token
-text = (doc * (chars // len(doc) + 1))[:chars]
+text = (doc * (chars // len(doc) + 1))[:chars].replace("\n", "\r\n")
+messages = [{"role": "user", "content": f"{prefix}\r\n\r\n{text}\r\n\r\nSummarise the above in one sentence."}]
+if reply_file:
+    messages += [{"role": "assistant", "content": open(reply_file).read()},
+                 {"role": "user", "content": "Which section is the longest?"}]
 print(json.dumps({
-    "messages": [{"role": "user", "content": f"{prefix}\n\n{text}\n\nSummarise the above in one sentence."}],
-    "max_tokens": 1, "temperature": 0, "stream": True,
+    "messages": messages,
+    "max_tokens": 40, "temperature": 0, "stream": True,
     "stream_options": {"include_usage": True},
+    "chat_template_kwargs": {"enable_thinking": False},
 }))
 PY
   }
 
+  # Prints the prefill summary, and saves the reply to the file named in argv[1].
   SUMMARIZE_PREFILL='
 import json, sys
-usage = None
+usage, reply = None, ""
 for line in sys.stdin:
     if line.startswith("data: {"):
-        usage = json.loads(line[6:]).get("usage") or usage
+        d = json.loads(line[6:])
+        usage = d.get("usage") or usage
+        for c in d.get("choices") or []:
+            reply += (c.get("delta") or {}).get("content") or ""
+open(sys.argv[1], "w").write(reply)
 if not usage:
     sys.exit("no usage stats in response")
 cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
@@ -61,22 +77,26 @@ print(f"{total} tokens, {cached} cached, prefill {secs:.2f}s{rate}")
 
   send() {
     curl -sfN "$API_URL" -H "Content-Type: application/json" -H "Authorization: Bearer $API_KEY" -d @- \
-      | python3 -c "$SUMMARIZE_PREFILL"
+      | python3 -c "$SUMMARIZE_PREFILL" "$REPLY"
   }
+
+  REPLY="$(mktemp)"
+  trap 'rm -f "$REPLY"' EXIT
 
   echo "Prefill and prompt caching against $MODEL (context ${CTX}, $RUNS runs per size)"
   echo
+  # The first follow-up after a restart is a few seconds slower, so warm that up too.
   printf '%-22s' 'warm-up (ignore):'; build_body 2048 "warm-up $$" | send
+  printf '%-22s' 'warm-up (ignore):'; build_body 2048 "warm-up $$" "$REPLY" | send
   for size in 16384 49152; do
     label="$((size / 1024))k target"
     if [ "$size" -gt $((CTX - 1024)) ]; then echo "$label: skipped, larger than the loaded context"; continue; fi
     for i in $(seq 1 "$RUNS"); do
       printf '%-22s' "$label, cold $i/$RUNS:"
-      build_body "$size" "Run $i of $$ at $(date +%s%N)." > "${TMPDIR:-/tmp}/bench-long-$$.json"
-      send < "${TMPDIR:-/tmp}/bench-long-$$.json"
+      prefix="Run $i of $$ at $(date +%s%N)."
+      build_body "$size" "$prefix" | send
     done
-    printf '%-22s' "$label, cached:"; send < "${TMPDIR:-/tmp}/bench-long-$$.json"
-    rm -f "${TMPDIR:-/tmp}/bench-long-$$.json"
+    printf '%-22s' "$label, follow-up:"; build_body "$size" "$prefix" "$REPLY" | send
   done
   exit 0
 fi
