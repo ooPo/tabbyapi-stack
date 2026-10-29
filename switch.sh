@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-DEFAULT_CONFIG="configs/qwen3.8-27b-3.0bpw.yml"
+DEFAULT_CONFIG="configs/qwen3.8-27b-3.5bpw.yml"
 API_KEY="$(grep -oP '^api_key:\s*\K\S+' api_tokens.yml)"
 
 # The config saved in .env, or the default if none is saved or it no longer exists.

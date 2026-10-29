@@ -1,4 +1,4 @@
-# Qwen3.8-27B exl3 3.50bpw. Same as the 3.0bpw config except:
+# Qwen3.8-27B exl3 3.50bpw (default config). Same as the 3.0bpw config except:
 #   - 80k context, leaving room for 4K images (96k fails to load alongside MTP).
 
 network:

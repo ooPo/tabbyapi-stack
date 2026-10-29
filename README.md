@@ -31,11 +31,11 @@ docker compose up -d --force-recreate tabbyapi
 docker compose logs -f tabbyapi
 ```
 
-This uses `configs/qwen3.8-27b-3.0bpw.yml` by default. To switch configs, use
+This uses `configs/qwen3.8-27b-3.5bpw.yml` by default. To switch configs, use
 `switch.sh`:
 
 ```bash
-./switch.sh 3.5    # or 3.0, or a path such as configs/<file>.yml
+./switch.sh 3.0    # or 3.5, or a path such as configs/<file>.yml
 ./switch.sh        # show the current config, the loaded model and the opencode entry
 ```
 
@@ -93,8 +93,8 @@ during long prompts and image requests; see [Vision](#vision).
 
 Each context is the largest step that loads with MTP and still leaves room for a
 4K image: 3.5bpw fails to load at 96k, and 3.0bpw at 144k loads but a 4K image
-then runs out of VRAM. Pick 3.0bpw for long context, or 3.5bpw for the better
-quant at the same speed when 80k is enough.
+then runs out of VRAM. 3.5bpw is the default: the better quant at the same
+speed. Switch to 3.0bpw for long sessions that need more than 80k.
 
 ### Hybrid drafting
 

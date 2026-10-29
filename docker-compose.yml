@@ -16,8 +16,8 @@ services:
       # each model's copy, so the downloaded files stay untouched.
       - ./configs/vision-preprocessor.json:/app/models/Qwen3.8-27B-exl3_3.00bpw/preprocessor_config.json:ro
       - ./configs/vision-preprocessor.json:/app/models/Qwen3.8-27B-exl3_3.50bpw/preprocessor_config.json:ro
-      # Server config; pick a variant with e.g. TABBY_CONFIG=configs/qwen3.8-27b-3.5bpw.yml docker compose up -d
-      - ./${TABBY_CONFIG:-configs/qwen3.8-27b-3.0bpw.yml}:/app/config.yml
+      # Server config; pick a variant with e.g. TABBY_CONFIG=configs/qwen3.8-27b-3.0bpw.yml docker compose up -d
+      - ./${TABBY_CONFIG:-configs/qwen3.8-27b-3.5bpw.yml}:/app/config.yml
       # API key file. Create it before first launch (see README): if it's missing,
       # Docker creates a directory here instead and TabbyAPI can't use it.
       - ./api_tokens.yml:/app/api_tokens.yml

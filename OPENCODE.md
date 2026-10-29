@@ -65,14 +65,15 @@ past 80k and requests start failing.
 `./switch.sh` prints the entry to use after each switch, and `./switch.sh` on its
 own shows it for whatever is currently loaded.
 
-| Server config                    | opencode entry              | Good for                         |
-|----------------------------------|-----------------------------|----------------------------------|
-| `configs/qwen3.8-27b-3.0bpw.yml` | `Qwen3.8 27B 3.0bpw (128k)` | Long agent sessions              |
-| `configs/qwen3.8-27b-3.5bpw.yml` | `Qwen3.8 27B 3.5bpw (80k)`  | Better quant, focused tasks      |
+| Server config                    | opencode entry              | Good for                          |
+|----------------------------------|-----------------------------|-----------------------------------|
+| `configs/qwen3.8-27b-3.5bpw.yml` | `Qwen3.8 27B 3.5bpw (80k)`  | Default: better quant, same speed |
+| `configs/qwen3.8-27b-3.0bpw.yml` | `Qwen3.8 27B 3.0bpw (128k)` | Long agent sessions               |
 
 Both run at a similar speed (about 44–45 T/s). Code is less forgiving of
 quantization than prose, so 3.5bpw should be the stronger coder, at the cost of
-some context.
+some context. Switch to 3.0bpw when a session needs more room before opencode
+compacts it.
 
 ## Reasoning effort
 
@@ -154,7 +155,7 @@ request logging turned on:
 
 ```bash
 sed 's/^  log_generation_params: false/  log_generation_params: false\n  log_chat_completion_requests: true/' \
-  configs/qwen3.8-27b-3.0bpw.yml > configs/tmp-debug.yml
+  configs/qwen3.8-27b-3.5bpw.yml > configs/tmp-debug.yml
 TABBY_CONFIG=configs/tmp-debug.yml docker compose up -d --force-recreate tabbyapi
 # ...send a request from opencode, then:
 docker exec tabbyapi sh -c 'ls -t /app/logs/debug/'

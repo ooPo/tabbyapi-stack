@@ -1,4 +1,4 @@
-# Qwen3.8-27B exl3 3.00bpw (default config).
+# Qwen3.8-27B exl3 3.00bpw, for long sessions.
 # 128k context, 6,5 KV cache, MTP and vision on. Thinking-mode sampler preset.
 
 network:
