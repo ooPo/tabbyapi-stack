@@ -13,7 +13,10 @@ sampling:
 
 model:
   model_name: Qwen3.8-27B-exl3_3.50bpw
-  vision: false
+  # Vision tower weights are kept in system RAM (~1.6 GB): in VRAM they do not
+  # fit at full context. Image size cap: see docker-compose.yml.
+  vision: true
+  vision_offload: true
   max_seq_len: 61440 # 60k
   cache_mode: 6,5
   gpu_split_auto: true

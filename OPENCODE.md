@@ -21,6 +21,8 @@ In `~/.config/opencode/opencode.json`, under `provider`:
   "models": {
     "Qwen3.8-27B-exl3_3.00bpw": {
       "name": "Qwen3.8 27B 3.0bpw (112k)",
+      "attachment": true,
+      "modalities": { "input": ["text", "image"], "output": ["text"] },
       "limit": { "context": 114688, "output": 32000 },
       "options": {
         "chat_template_kwargs": { "reasoning_effort": "xhigh", "preserve_thinking": true },
@@ -39,6 +41,8 @@ In `~/.config/opencode/opencode.json`, under `provider`:
     },
     "Qwen3.8-27B-exl3_3.50bpw": {
       "name": "Qwen3.8 27B 3.5bpw (60k)",
+      "attachment": true,
+      "modalities": { "input": ["text", "image"], "output": ["text"] },
       "limit": { "context": 61440, "output": 32000 },
       "options": { "...": "same as the 3.0bpw entry" },
       "variants": { "...": "same as the 3.0bpw entry" }
@@ -104,6 +108,16 @@ opencode's system prompt and tool definitions take about 11k tokens before you
 type anything, most of it opencode's own core tools. That's a tenth of 3.0bpw's
 context but nearly a fifth of 3.5bpw's. Turning off MCP tools you don't use, in
 opencode's `tools` section, saves a little on every request.
+
+## Images
+
+`attachment` and `modalities` tell opencode the model accepts images, so you can
+paste screenshots of errors, UIs or charts. Images cost context like text: about
+900 tokens for a 1280×720 screenshot, 3,600 for 1440p and 8,000 for 4K (the
+largest the server accepts; bigger ones are downscaled). They stay in the
+conversation until opencode compacts it, so a few 4K screenshots take a real
+share of 3.5bpw's 60k. Crop to the part that matters when you can: it's faster,
+too. See [Vision](README.md#vision) for timings.
 
 ## Performance notes
 

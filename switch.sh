@@ -12,8 +12,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 DEFAULT_CONFIG="configs/qwen3.8-27b-3.0bpw.yml"
 API_KEY="$(grep -oP '^api_key:\s*\K\S+' api_tokens.yml)"
 
+# The config saved in .env, or the default if none is saved or it no longer exists.
 current_config() {
-  grep -oP '^TABBY_CONFIG=\K.*' .env 2>/dev/null || echo "$DEFAULT_CONFIG"
+  local config
+  config="$(grep -oP '^TABBY_CONFIG=\K.*' .env 2>/dev/null || true)"
+  if [ -f "$config" ]; then echo "$config"; else echo "$DEFAULT_CONFIG"; fi
 }
 
 loaded_model() {
@@ -37,7 +40,8 @@ start_with() {
     sleep 3
     loaded_model >/dev/null 2>&1 && return 0
     if docker compose logs tabbyapi 2>&1 | grep -qE 'Insufficient VRAM|Traceback'; then
-      docker compose logs --tail 3 tabbyapi 2>&1 | sed 's/^/  /'
+      # Docker restarts a failed load, so show the error itself rather than the log tail.
+      docker compose logs tabbyapi 2>&1 | grep -E '^\S+\s+\|\s+\w*Error' | tail -1 | sed 's/^/  /'
       return 1
     fi
   done
@@ -64,6 +68,7 @@ if start_with "$NEW"; then
 else
   echo "failed to load $NEW; restoring $OLD ..."
   start_with "$OLD" || { echo "restore failed too; check docker compose logs tabbyapi" >&2; exit 1; }
+  echo "TABBY_CONFIG=$OLD" > .env
   show_status "$OLD"
   exit 1
 fi

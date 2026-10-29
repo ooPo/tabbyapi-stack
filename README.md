@@ -72,6 +72,8 @@ these reasoning and MTP settings:
 - **RAM prompt cache:** K/V pages evicted from VRAM are kept in system RAM
   (`sysmem_kv_cache: 8192`), so switching back to an earlier conversation is
   near-instant. See [Prompt caching](#prompt-caching).
+- **Vision:** images are accepted, with the vision weights kept in system RAM
+  and images capped at 4K. See [Vision](#vision).
 
 | File                             | Context | Decode (code / prose) | Peak VRAM |
 |----------------------------------|---------|-----------------------|-----------|
@@ -146,6 +148,42 @@ overhead) is reserved as pinned memory right after load, even though the option
 is described as a ceiling. At about 24 KB per token, that holds roughly 360k
 tokens. Decode speed is unaffected.
 
+### Vision
+
+Both configs accept images (`vision: true`). The vision weights don't fit in VRAM
+at full context, so `vision_offload: true` keeps them in system RAM (about 1.6 GB
+more). VRAM after load and decode speed are unchanged, and offloading made image
+requests no slower than in-VRAM vision did (tested at a reduced 64k context, where
+both fit).
+
+Measured on 3.0bpw, with each image asked about once:
+
+| Image                         | Image tokens | First token | Peak VRAM |
+|-------------------------------|--------------|-------------|-----------|
+| 1280×720                      | ~900         | 2 s         | 15.1 GB   |
+| 1440p                         | ~3,600       | 8 s         | 15.5 GB   |
+| 1280×4800 (full-page capture) | ~6,000       | 14 s        | 15.6 GB   |
+| 4K                            | ~8,200       | 20 s        | 15.6 GB   |
+
+Most of that time is processing the image tokens as prompt. Asking again about the
+same image takes about 0.6 s, as both the image and the prompt are cached. The
+first image after a restart is slower (by about 10 s for a 4K one). On 3.5bpw,
+timings are the same and peak VRAM is up to 0.25 GB higher (15.9 GB for 4K).
+
+**Image size cap.** The model allows images up to 16.7M pixels (~16k tokens), but
+from about 5K the vision encoder runs out of VRAM. That fails the request with a
+500 error, and the server keeps running but holds about 1.5 GB more VRAM until it
+restarts. `configs/vision-preprocessor.json` lowers the cap to 8.4M pixels (just
+above 4K), so larger images are downscaled instead. It's a copy of the models'
+`preprocessor_config.json` with only `size.longest_edge` changed, and
+`docker-compose.yml` mounts it over each model's copy. A new model needs its own
+mount line there. To trade 4K detail for more headroom, lower `longest_edge`
+(each image token covers 32×32 pixels).
+
+Accuracy was good on screenshots: build failures (file, line, exit code, commit),
+charts, and finding one line in a dense log at every size, including small 18px
+text.
+
 The `qwen` sampler preset in `sampler_overrides/` uses the model card's
 thinking-mode values. It only fills in values the client doesn't send, so clients
 that turn thinking off should send the model card's non-thinking values themselves.
@@ -199,6 +237,9 @@ restart with the default config.
 - **Context limits:** the server still loads at the configured context. VRAM
   improvements may also let a config load with more, so it's worth retrying the
   next step up (e.g. 64k on 3.5bpw with MTP).
+- **Vision:** send a screenshot larger than 4K. It should be downscaled to about
+  8k image tokens (`prompt_tokens` in the usage stats), not fail with a 500. If it
+  fails, the build may read the image size cap from somewhere else.
 
 **5. Keep it or roll back.** If everything holds up, commit the new digest with
 the numbers in the message, and update the tables in this README. If not, restore
